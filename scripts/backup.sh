@@ -21,6 +21,7 @@ KEEP_DAYS="${KEEP_DAYS:-7}"
 DEST="$BACKUP_ROOT/$(date +%F_%H%M)"
 
 mkdir -p "$DEST"
+chmod 700 "$BACKUP_ROOT" "$DEST"  # les archives contiennent des secrets (clés TLS, .env)
 echo "→ Projets ($PROJECTS_DIR)"
 tar -czf "$DEST/projects.tar.gz" -C "$(dirname "$PROJECTS_DIR")" "$(basename "$PROJECTS_DIR")"
 cp "$ROOT/infra/.env" "$DEST/infra.env" 2>/dev/null || true
