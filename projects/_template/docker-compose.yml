@@ -1,0 +1,57 @@
+# =============================================================================
+#  Projet : __NAME__   →   https://__HOST__
+# -----------------------------------------------------------------------------
+#  Règles d'or :
+#   1. Pas de `ports:` ! Traefik route le trafic via le réseau `proxy`.
+#      (Docker contourne le pare-feu UFW pour les ports publiés.)
+#   2. Les labels `mc.*` alimentent Mission Control.
+#   3. Remplace le service `web` par ton appli (build: . ou une image).
+# =============================================================================
+name: __NAME__
+
+services:
+  web:
+    image: nginx:alpine
+    # build: .
+    restart: unless-stopped
+    volumes:
+      - ./public:/usr/share/nginx/html:ro
+    networks: [proxy]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      # --- Routage HTTPS (certificat automatique) ---
+      traefik.enable: "true"
+      traefik.http.routers.__NAME__.rule: Host(`__HOST__`)
+      traefik.http.routers.__NAME__.middlewares: compress@file
+      # Pour protéger par mot de passe : compress@file,auth@file
+      traefik.http.services.__NAME__.loadbalancer.server.port: "80"
+      # --- Fiche dans Mission Control ---
+      mc.name: "__NAME__"
+      mc.description: "Décris ton projet ici"
+      mc.icon: "🚀"
+      mc.repo: ""
+
+  # Exemple de base de données (réseau interne uniquement, jamais exposée)
+  # db:
+  #   image: postgres:17-alpine
+  #   restart: unless-stopped
+  #   env_file: .env
+  #   volumes:
+  #     - db-data:/var/lib/postgresql/data
+  #   networks: [internal]
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+  #     interval: 10s
+  # (ajoute alors `internal` aux networks de `web`)
+
+networks:
+  proxy:
+    external: true
+  internal: {}
+
+# volumes:
+#   db-data:

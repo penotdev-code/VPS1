@@ -1,0 +1,37 @@
+# Config dynamique Traefik (rechargée à chaud).
+# Utilisable dans les labels de tes projets : `<nom>@file`
+http:
+  middlewares:
+    # Authentification (identifiants générés par install.sh).
+    # Ex : traefik.http.routers.monapp.middlewares: auth@file
+    auth:
+      basicAuth:
+        usersFile: /etc/traefik/auth/users
+        realm: "Mission Control"
+
+    # Appliqué automatiquement à tous les sites HTTPS.
+    security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        contentTypeNosniff: true
+        customFrameOptionsValue: SAMEORIGIN
+        referrerPolicy: strict-origin-when-cross-origin
+        customResponseHeaders:
+          X-Powered-By: ""
+          Server: ""
+
+    # Compression gzip/brotli — à ajouter au cas par cas.
+    compress:
+      compress: {}
+
+    # Limitation de débit basique — à ajouter au cas par cas (API, formulaires…).
+    rate-limit:
+      rateLimit:
+        average: 50
+        burst: 100
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12

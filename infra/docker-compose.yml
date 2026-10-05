@@ -1,0 +1,119 @@
+# =============================================================================
+#  Stack d'infrastructure : reverse-proxy + HTTPS auto + dashboard
+#  Lancée par ../install.sh — variables lues dans infra/.env
+# =============================================================================
+name: infra
+
+x-system-labels: &system
+  mc.name: "Infrastructure"
+  mc.description: "Reverse-proxy Traefik, certificats HTTPS et Mission Control"
+  mc.icon: "🛰️"
+  mc.system: "true"
+
+services:
+  # Accès filtré et en lecture seule à l'API Docker : ni Traefik ni le
+  # dashboard ne touchent directement au socket (= root sur la machine).
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      INFO: 1
+      EVENTS: 1
+      VERSION: 1
+      PING: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [socket]
+    labels: *system
+
+  traefik:
+    image: traefik:v3
+    container_name: traefik
+    restart: unless-stopped
+    depends_on: [socket-proxy]
+    command:
+      - --global.sendanonymoususage=false
+      - --log.level=INFO
+      - --ping=true
+      - --api.dashboard=true
+      # Découverte des conteneurs (opt-in avec traefik.enable=true)
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=proxy
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      # HTTP -> HTTPS
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      # HTTPS : certificat Let's Encrypt + en-têtes de sécurité sur TOUS les sites
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http3=true
+      - --entrypoints.websecure.http.tls.certresolver=le
+      - --entrypoints.websecure.http.middlewares=security-headers@file
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - ./traefik/auth:/etc/traefik/auth:ro
+      - traefik-certs:/letsencrypt
+    networks: [proxy, socket]
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      <<: *system
+      traefik.enable: "true"
+      traefik.http.routers.traefik.rule: Host(`${TRAEFIK_HOST}`)
+      traefik.http.routers.traefik.service: api@internal
+      traefik.http.routers.traefik.middlewares: auth@file
+
+  dashboard:
+    build: ../dashboard
+    image: mission-control:local
+    container_name: mission-control
+    restart: unless-stopped
+    depends_on: [socket-proxy]
+    environment:
+      DOCKER_HOST: tcp://socket-proxy:2375
+      HOST_PROC: /host/proc
+      HOST_SYS: /host/sys
+      HOST_ETC: /host/etc
+      DOMAIN: ${DOMAIN}
+      TZ: ${TZ:-Europe/Paris}
+    volumes:
+      # Lecture seule, juste ce qu'il faut pour les métriques de l'hôte
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/hostname:/host/etc/hostname:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - mc-data:/data
+    networks: [proxy, socket]
+    labels:
+      <<: *system
+      traefik.enable: "true"
+      traefik.http.routers.mission-control.rule: Host(`${DASHBOARD_HOST}`)
+      traefik.http.routers.mission-control.middlewares: auth@file
+      traefik.http.services.mission-control.loadbalancer.server.port: "3000"
+
+networks:
+  proxy:
+    name: proxy
+    external: true
+  socket:
+    internal: true
+
+volumes:
+  traefik-certs:
+  mc-data:

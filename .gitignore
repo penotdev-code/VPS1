@@ -1,0 +1,9 @@
+# Secrets & config locale
+infra/.env
+infra/traefik/auth/*
+!infra/traefik/auth/.gitkeep
+
+# Dev
+dashboard/data/
+node_modules/
+.DS_Store
